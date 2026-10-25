@@ -63,8 +63,8 @@ export const TerminalConsole: React.FC<TerminalConsoleProps> = ({
   };
 
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col h-full">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
+    <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 sm:p-5 flex flex-col h-full">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 mb-4 pb-3 border-b border-slate-800">
         <div className="flex items-center gap-2">
           <TerminalIcon className="w-4 h-4 text-sky-400" />
           <h2 className="text-sm font-semibold text-white tracking-wide">
@@ -73,7 +73,7 @@ export const TerminalConsole: React.FC<TerminalConsoleProps> = ({
         </div>
 
         {/* Quick Simulation Presets */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <span className="text-[11px] text-slate-500">Presets:</span>
           <button
             onClick={() => handleSimulate('rm -rf /')}
@@ -108,13 +108,13 @@ export const TerminalConsole: React.FC<TerminalConsoleProps> = ({
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             placeholder="Command to execute in sandbox (e.g., git status, npm run build)..."
-            className="flex-1 bg-transparent text-white placeholder-slate-600 focus:outline-none"
+            className="flex-1 bg-transparent text-white placeholder-slate-600 focus:outline-none min-w-0"
             disabled={running}
           />
           <button
             type="submit"
             disabled={running || !command.trim()}
-            className="flex items-center gap-1.5 px-3 py-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded font-sans text-xs font-medium transition"
+            className="flex items-center gap-1.5 px-3 py-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded font-sans text-xs font-medium transition shrink-0 ml-2"
           >
             <Play className={`w-3 h-3 ${running ? 'animate-spin' : ''}`} />
             {running ? 'Running...' : 'Execute'}
@@ -122,7 +122,7 @@ export const TerminalConsole: React.FC<TerminalConsoleProps> = ({
         </div>
 
         {/* Verification test checkbox & input */}
-        <div className="flex items-center gap-3 px-1 text-xs text-slate-400">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-1 text-xs text-slate-400">
           <label className="flex items-center gap-1.5 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -139,7 +139,7 @@ export const TerminalConsole: React.FC<TerminalConsoleProps> = ({
               value={verifyCommand}
               onChange={(e) => setVerifyCommand(e.target.value)}
               placeholder="Verify test command (e.g., npm test, pytest)..."
-              className="flex-1 max-w-sm bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-sky-500"
+              className="flex-1 min-w-[200px] max-w-sm bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-sky-500"
             />
           )}
         </div>

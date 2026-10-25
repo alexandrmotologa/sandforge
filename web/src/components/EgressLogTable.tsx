@@ -111,14 +111,14 @@ export const EgressLogTable: React.FC<EgressLogTableProps> = ({
           </p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-left text-xs">
+        <div className="flex-1 overflow-y-auto overflow-x-auto min-w-0">
+          <table className="w-full text-left text-xs min-w-[420px] sm:min-w-full">
             <thead className="text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800 bg-slate-950/40 sticky top-0">
               <tr>
                 <th className="py-2.5 px-3">Decision</th>
                 <th className="py-2.5 px-3">Target Host</th>
-                <th className="py-2.5 px-3">Port</th>
-                <th className="py-2.5 px-3">Process</th>
+                <th className="hidden sm:table-cell py-2.5 px-3">Port</th>
+                <th className="hidden md:table-cell py-2.5 px-3">Process</th>
                 <th className="py-2.5 px-3">Reason</th>
                 <th className="py-2.5 px-3 text-right">Time</th>
               </tr>
@@ -147,16 +147,16 @@ export const EgressLogTable: React.FC<EgressLogTableProps> = ({
                       )}
                     </td>
 
-                    <td className="py-2 px-3 font-semibold text-slate-200 truncate max-w-xs" title={a.target_host}>
+                    <td className="py-2 px-3 font-semibold text-slate-200 truncate max-w-[120px] sm:max-w-xs" title={a.target_host}>
                       {a.target_host}
                     </td>
 
-                    <td className="py-2 px-3 text-slate-400">{a.target_port}</td>
-                    <td className="py-2 px-3 text-slate-300">{a.process}</td>
-                    <td className="py-2 px-3 text-slate-400 font-sans text-[11px] truncate max-w-sm" title={a.reason}>
+                    <td className="hidden sm:table-cell py-2 px-3 text-slate-400">{a.target_port}</td>
+                    <td className="hidden md:table-cell py-2 px-3 text-slate-300">{a.process}</td>
+                    <td className="py-2 px-3 text-slate-400 font-sans text-[11px] truncate max-w-[140px] sm:max-w-sm" title={a.reason}>
                       {a.reason}
                     </td>
-                    <td className="py-2 px-3 text-right text-slate-500 whitespace-nowrap">
+                    <td className="py-2 px-3 text-right text-slate-500 whitespace-nowrap text-[11px]">
                       {new Date(a.timestamp).toLocaleTimeString()}
                     </td>
                   </tr>

@@ -46,10 +46,10 @@ export function App() {
         onDownloadReport={() => downloadAuditReport('html')}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 flex flex-col">
         <ProcessMonitor status={status} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 min-h-[420px]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6 min-h-[420px]">
           <SnapshotTimeline
             snapshots={snapshots}
             onRollback={rollback}

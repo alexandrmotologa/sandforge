@@ -1,8 +1,26 @@
-# SandForge
+<p align="center">
+  <img src="docs/images/logo.png?raw=true" alt="SandForge Logo" width="130" style="border-radius: 24px;" />
+</p>
 
-Local ephemeral execution sandbox, Copy-on-Write rollback engine, and egress security guard for autonomous AI coding agents.
+<h1 align="center">SandForge</h1>
 
-![SandForge Demo](docs/images/sandforge_demo.gif)
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=flat&logo=go" alt="Go 1.23" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react" alt="React 19" />
+  <img src="https://img.shields.io/badge/Protocol-MCP-10b981?style=flat" alt="Model Context Protocol" />
+  <img src="https://img.shields.io/badge/Rollback-%3C15ms-emerald?style=flat" alt="Sub-15ms Rollback" />
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" />
+</p>
+
+<p align="center">
+  Local ephemeral execution sandbox, Copy-on-Write rollback engine, and egress security guard for autonomous AI coding agents.
+</p>
+
+---
+
+<p align="center">
+  <img src="docs/images/sandforge_demo.gif" alt="SandForge Animated Demo" width="100%" />
+</p>
 
 SandForge isolates shell commands issued by coding agents such as Claude Code, Cursor, Devin, and Aider. It executes commands in pre-warmed isolated containers or sandboxed processes in under 150ms, captures filesystem checkpoints before each execution, restores prior state in under 15ms on regressions, and blocks outbound connections to unapproved hosts to prevent credential theft caused by prompt injection.
 
