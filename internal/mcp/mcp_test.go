@@ -28,7 +28,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 
 	processRt := container.NewProcessRuntime(tempDir)
 	pool := container.NewPool(nil, processRt, 2)
-	executor := container.NewExecutor(pool, gc)
+	executor := container.NewExecutor(pool, gc, nil)
 
 	hub := firewall.NewAlertHub(50)
 	fw := firewall.NewController(hub)
@@ -79,3 +79,4 @@ func TestMCPServerLifecycle(t *testing.T) {
 		t.Fatalf("expected tools list to have items")
 	}
 }
+

@@ -43,7 +43,9 @@ type Controller struct {
 	allowedDomains map[string]struct{}
 	blockedNets    []*net.IPNet
 	alertHub       *AlertHub
+	honeyVault     *HoneyVault
 	strictMode     bool
+	deepPacketScan bool
 }
 
 // NewController initializes the firewall with default security policy.
@@ -51,7 +53,9 @@ func NewController(alertHub *AlertHub) *Controller {
 	c := &Controller{
 		allowedDomains: make(map[string]struct{}),
 		alertHub:       alertHub,
+		honeyVault:     NewHoneyVault(),
 		strictMode:     true,
+		deepPacketScan: true,
 	}
 
 	for _, domain := range DefaultAllowedDomains {
@@ -147,16 +151,23 @@ func (c *Controller) CheckAndRecord(process string, host string, port int, proto
 	return allowed, alert
 }
 
+// HoneyVault returns the honeytoken tripwire vault.
+func (c *Controller) HoneyVault() *HoneyVault {
+	return c.honeyVault
+}
+
 // Config returns the current firewall configuration.
 func (c *Controller) Config() types.FirewallConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	return types.FirewallConfig{
-		AllowedDomains:  c.AllowedDomains(),
-		BlockedIPRanges: DefaultBlockedCIDRs,
-		InterceptDNS:    true,
-		StrictMode:      c.strictMode,
+		AllowedDomains:    c.AllowedDomains(),
+		BlockedIPRanges:   DefaultBlockedCIDRs,
+		InterceptDNS:      true,
+		StrictMode:        c.strictMode,
+		DeepPacketScan:    c.deepPacketScan,
+		HoneytokensActive: c.honeyVault.Count(),
 	}
 }
 

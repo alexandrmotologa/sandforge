@@ -33,6 +33,42 @@ func GetAvailableTools() []Tool {
 			},
 		},
 		{
+			Name:        "sandforge_run_with_verify",
+			Description: "Execute a command and immediately run a verification test command (e.g. npm test, go test). If verification fails, automatically rolls back workspace to pre-command clean state and returns test error output.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"command": {
+						Type:        "string",
+						Description: "The mutation command to execute (e.g. modifying or compiling code).",
+					},
+					"verify_command": {
+						Type:        "string",
+						Description: "The test command to verify functionality (e.g. 'npm test', 'pytest', 'go test ./...').",
+					},
+					"timeout_seconds": {
+						Type:        "integer",
+						Description: "Maximum execution timeout in seconds (default: 60).",
+					},
+				},
+				Required: []string{"command", "verify_command"},
+			},
+		},
+		{
+			Name:        "sandforge_policy_check",
+			Description: "Check whether a command complies with destructive command prevention policies before execution.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"command": {
+						Type:        "string",
+						Description: "The shell command to test for safety violations.",
+					},
+				},
+				Required: []string{"command"},
+			},
+		},
+		{
 			Name:        "sandforge_rollback",
 			Description: "Instantly restore the workspace filesystem to a prior snapshot state in under 15ms. Reverts all file modifications and deletes newly created files.",
 			InputSchema: InputSchema{
@@ -116,11 +152,11 @@ func GetAvailableTools() []Tool {
 
 // ToolHandler handles tool execution requests.
 type ToolHandler struct {
-	executor   *container.Executor
-	firewall   *firewall.Controller
-	proxy      *firewall.ProxyInterceptor
-	startTime  time.Time
-	workspace  string
+	executor  *container.Executor
+	firewall  *firewall.Controller
+	proxy     *firewall.ProxyInterceptor
+	startTime time.Time
+	workspace string
 }
 
 // NewToolHandler creates a new tool handler.
@@ -147,7 +183,6 @@ func (h *ToolHandler) ExecuteTool(ctx context.Context, name string, args map[str
 			timeoutSec = int(t)
 		}
 
-		// Inject proxy env vars to ensure egress firewall filtering
 		var env []string
 		if h.proxy != nil {
 			env = append(env, h.proxy.EnvVars()...)
@@ -164,6 +199,57 @@ func (h *ToolHandler) ExecuteTool(ctx context.Context, name string, args map[str
 
 		b, _ := json.MarshalIndent(res, "", "  ")
 		return textResult(string(b)), nil
+
+	case "sandforge_run_with_verify":
+		cmd, ok := args["command"].(string)
+		if !ok || cmd == "" {
+			return errorResult("missing required argument 'command'"), nil
+		}
+		verifyCmd, ok := args["verify_command"].(string)
+		if !ok || verifyCmd == "" {
+			return errorResult("missing required argument 'verify_command'"), nil
+		}
+
+		timeoutSec := 60
+		if t, ok := args["timeout_seconds"].(float64); ok && t > 0 {
+			timeoutSec = int(t)
+		}
+
+		var env []string
+		if h.proxy != nil {
+			env = append(env, h.proxy.EnvVars()...)
+		}
+
+		res, err := h.executor.RunWithVerify(ctx, cmd, verifyCmd, container.ExecOptions{
+			Timeout:    time.Duration(timeoutSec) * time.Second,
+			WorkingDir: h.workspace,
+			Env:        env,
+		})
+		if err != nil {
+			return errorResult(fmt.Sprintf("execution failed: %v", err)), nil
+		}
+
+		b, _ := json.MarshalIndent(res, "", "  ")
+		return textResult(string(b)), nil
+
+	case "sandforge_policy_check":
+		cmd, ok := args["command"].(string)
+		if !ok || cmd == "" {
+			return errorResult("missing required argument 'command'"), nil
+		}
+
+		if h.executor.Policy() != nil {
+			allowed, violation := h.executor.Policy().Check(cmd)
+			result := map[string]interface{}{
+				"command":   cmd,
+				"allowed":   allowed,
+				"violation": violation,
+			}
+			b, _ := json.MarshalIndent(result, "", "  ")
+			return textResult(string(b)), nil
+		}
+
+		return textResult(`{"allowed": true, "note": "Policy engine not active"}`), nil
 
 	case "sandforge_rollback":
 		snapID, ok := args["snapshot_id"].(string)
@@ -243,6 +329,11 @@ func (h *ToolHandler) ExecuteTool(ctx context.Context, name string, args map[str
 		totalAlerts, blocked := h.firewall.AlertHub().Stats()
 		snapshots, _ := h.executor.Snapshotter().List(ctx)
 
+		policyCfg := types.PolicyConfig{}
+		if h.executor.Policy() != nil {
+			policyCfg = h.executor.Policy().Config()
+		}
+
 		status := types.SandboxStatus{
 			State:            "ready",
 			Mode:             h.executor.Pool().ActiveRuntime(ctx).Mode(),
@@ -253,6 +344,7 @@ func (h *ToolHandler) ExecuteTool(ctx context.Context, name string, args map[str
 			TotalAlerts:      totalAlerts,
 			BlockedAttempts:  blocked,
 			Firewall:         h.firewall.Config(),
+			Policy:           policyCfg,
 			UptimeSeconds:    int64(time.Since(h.startTime).Seconds()),
 		}
 

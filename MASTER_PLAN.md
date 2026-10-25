@@ -198,3 +198,23 @@ sandforge/
 - Simulated attack tests: prompt injection with `curl` exfiltration, destructive command `rm -rf` with clean rollback.
 - Production README.md and documentation following humanizer guidelines.
 - UI screenshots and animated demo GIF for portfolio synchronization.
+
+### Phase 9: Advanced Security, Verification & Tooling Extensions (Completed)
+- Feature 1: Test-Driven Auto-Rollback (sandforge_run_with_verify and sandforge run --verify)
+  - Runs specified command followed immediately by a verification test command.
+  - Automatically reverts workspace to pre-command checkpoint if verification fails (exit code != 0).
+  - Web console exposes toggle and presets for regression testing.
+- Feature 2: Deep Packet Inspection (DPI) & Honeytoken Vault
+  - Scans outbound HTTP bodies and query strings for API keys (Anthropic, OpenAI, GitHub, AWS, Slack, SSH).
+  - Injects synthetic honeytokens into environment and workspace to catch unauthorized exfiltration attempts.
+  - Immediately terminates connections and raises high-severity alerts.
+- Feature 3: Destructive Command Interceptor & Policy Engine (internal/policy)
+  - Pre-execution AST and token validation for dangerous shell commands.
+  - Blocks root wipes (rm -rf /), git push --force, fork bombs, and system power actions.
+- Feature 4: Security Incident Report Generator & Audit Export (internal/audit)
+  - Generates formal compliance audit reports in HTML, Markdown, and JSON formats.
+  - Accessible via CLI (sandforge export-audit), REST API (/api/audit/report), and 1-click Web Studio export.
+- Feature 5: 1-Click MCP Config Generator & Real-Time Agent Monitor
+  - Auto-configures Claude Code, Cursor, and Windsurf via sandforge init-mcp.
+  - Tracks live connected agent sessions in status endpoint and Web Studio header.
+

@@ -12,9 +12,13 @@ SandForge isolates shell commands issued by coding agents such as Claude Code, C
 
 - **Sub-150ms Execution**: Dispatches commands through a pre-warmed pool of idle execution runners, reducing startup overhead compared to cold Docker spins or cloud sandboxes.
 - **Sub-15ms Copy-on-Write Rollback**: Creates an instant Git ref checkpoint (`refs/sandforge/*`) via isolated Git index trees before any tool mutation. Restores modified, deleted, and untracked files in milliseconds.
+- **Test-Driven Auto-Rollback**: Accepts a verification test command alongside the target command (`sandforge_run_with_verify`). If post-execution tests fail, SandForge immediately reverts the workspace to the pre-command checkpoint.
+- **Deep Packet Inspection & Honeytoken Vault**: Inspects egress HTTP payloads and queries for leaked credentials (OpenAI, Anthropic, GitHub PAT, AWS, SSH keys) and plants synthetic honeypot tripwires to catch prompt injection exfiltration before bytes leave the host.
+- **Destructive Command Interceptor**: Deterministic policy engine that inspects AST and token patterns before execution, blocking root wipes (`rm -rf /`), forced git pushes, fork bombs, and system shutdowns.
 - **Egress Firewall**: Enforces a strict domain allowlist for package registries (`registry.npmjs.org`, `pypi.org`, `proxy.golang.org`, `github.com`, `crates.io`). Blocks private IP ranges and cloud instance metadata (`169.254.169.254`), neutralizing prompt injection exfiltration attacks.
-- **Native MCP Server**: Exposes Model Context Protocol JSON-RPC 2.0 tools (`sandforge_run`, `sandforge_rollback`, `sandforge_diff`, `sandforge_snapshot`, `sandforge_network_alerts`, `sandforge_status`) for Claude Code, Cursor, and Windsurf.
-- **Web Studio & Real-time Stream**: React 19 dashboard showing visual snapshot timelines, side-by-side diffs, active process monitors, and real-time egress network audit tables over WebSocket.
+- **1-Click MCP Installer**: Generates ready-to-run Model Context Protocol configurations for Claude Code, Cursor, and Windsurf (`sandforge init-mcp --client claude`).
+- **Audit Export & Incident Reports**: Generates formal incident and compliance reports in HTML, Markdown, and JSON formats for post-mortem analysis.
+- **Web Studio & Real-time Stream**: React 19 dashboard showing visual snapshot timelines, side-by-side diffs, active process monitors, live console with policy block alerts, and real-time egress network audit tables over WebSocket.
 
 ---
 
@@ -116,6 +120,23 @@ sandforge run "npm test"
 sandforge run "python -m pytest"
 ```
 
+### Run with Test-Driven Auto-Rollback
+
+Execute a command and automatically revert all filesystem changes if verification tests fail:
+
+```bash
+sandforge run "npm install buggy-package" --verify "npm test"
+```
+
+### Destructive Command Protection & Policy
+
+Commands violating security policies are stopped prior to invocation:
+
+```bash
+sandforge run "rm -rf /"
+# [POLICY BLOCKED] Root Filesystem Deletion: Attempts to delete root, parent, or system drive filesystem (Exit 126)
+```
+
 ### Inspect Snapshots and Rollback
 
 ```bash
@@ -125,8 +146,11 @@ sandforge snapshots
 # Rollback to any prior state in under 15ms
 sandforge rollback snap-142030-a1b2c3
 
-# View engine health and firewall rules
+# View engine health, decoy honeytokens, and firewall status
 sandforge status
+
+# Export incident audit report
+sandforge export-audit --format html --output audit-report.html
 ```
 
 ---
@@ -135,7 +159,22 @@ sandforge status
 
 SandForge connects directly into Claude Code, Cursor, and Windsurf via standard stdio JSON-RPC 2.0.
 
-### Claude Code Configuration
+### 1-Click MCP Configuration
+
+Automatically generate or install client configurations:
+
+```bash
+# Configure Claude Code
+sandforge init-mcp --client claude --workspace .
+
+# Configure Cursor IDE
+sandforge init-mcp --client cursor --workspace .
+
+# Configure Windsurf
+sandforge init-mcp --client windsurf --workspace .
+```
+
+### Manual Configuration Example
 
 Add SandForge to your `claude.json` or `~/.claude/config.json`:
 
@@ -150,23 +189,17 @@ Add SandForge to your `claude.json` or `~/.claude/config.json`:
 }
 ```
 
-### Cursor Configuration
-
-In Cursor Settings &gt; Features &gt; MCP &gt; Add New MCP Server:
-
-- **Name**: `sandforge`
-- **Type**: `command`
-- **Command**: `sandforge mcp --workspace .`
-
 ### Exposed MCP Tools
 
 - `sandforge_run(command, timeout_seconds)`: Executes a shell command with pre-snapshotting, returning stdout, stderr, exit code, and filesystem mutation summary.
+- `sandforge_run_with_verify(command, verify_command, timeout_seconds)`: Executes command followed by verification test; automatically reverts workspace if verification fails.
+- `sandforge_policy_check(command)`: Pre-evaluates whether a command violates safety policies before running it.
 - `sandforge_rollback(snapshot_id)`: Restores workspace to a specific checkpoint in milliseconds.
 - `sandforge_snapshot(description)`: Creates a named manual checkpoint.
 - `sandforge_diff(from_snapshot, to_snapshot)`: Returns unified diff between checkpoints or against current working directory.
 - `sandforge_list_snapshots(limit)`: Lists historical checkpoints.
-- `sandforge_network_alerts(limit)`: Returns network traffic events and blocked prompt injection attempts.
-- `sandforge_status()`: Returns sandbox health and isolation mode.
+- `sandforge_network_alerts(limit)`: Returns network traffic events, honeytoken tripwire triggers, and blocked exfiltration attempts.
+- `sandforge_status()`: Returns sandbox health, decoy trap counts, and connected client sessions.
 
 ---
 
@@ -174,11 +207,14 @@ In Cursor Settings &gt; Features &gt; MCP &gt; Add New MCP Server:
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/api/status` | `GET` | Health, isolation mode, and capacity |
+| `/api/status` | `GET` | Health, isolation mode, active honeytokens, and capacity |
 | `/api/snapshots` | `GET`, `POST` | List or create checkpoints |
 | `/api/snapshots/rollback` | `POST` | Revert workspace to snapshot ID |
 | `/api/snapshots/diff` | `GET` | Unified diff between snapshots |
-| `/api/exec` | `POST` | Execute command in sandbox |
+| `/api/exec` | `POST` | Execute command with pre-checkpoint and policy evaluation |
+| `/api/exec/verify` | `POST` | Execute command with automated test verification and auto-rollback |
+| `/api/policy` | `GET`, `POST` | View or configure command interception policies |
+| `/api/audit/report` | `GET` | Export security incident report in HTML, Markdown, or JSON |
 | `/api/firewall/rules` | `GET`, `POST`, `DELETE` | View, add, or remove domain rules |
 | `/api/firewall/alerts` | `GET` | Network security log and exfil alerts |
 | `/api/ws` | `WS` | Real-time WebSocket event stream |

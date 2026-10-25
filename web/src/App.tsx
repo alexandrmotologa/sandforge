@@ -18,9 +18,11 @@ export function App() {
     connected,
     rollback,
     runCommand,
+    runWithVerify,
     fetchDiff,
     addDomain,
     removeDomain,
+    downloadAuditReport,
     refresh,
   } = useSandboxStream();
 
@@ -41,6 +43,7 @@ export function App() {
         status={status}
         connected={connected}
         onRefresh={refresh}
+        onDownloadReport={() => downloadAuditReport('html')}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col">
@@ -66,13 +69,14 @@ export function App() {
           <TerminalConsole
             executions={executions}
             onRunCommand={runCommand}
+            onRunWithVerify={runWithVerify}
             onRollback={rollback}
           />
         </div>
       </main>
 
       <footer className="border-t border-slate-900 py-3 text-center text-xs text-slate-600 bg-slate-950">
-        SandForge Local Engine &bull; Sub-150ms Container Sandbox &bull; Sub-15ms CoW Rollback &bull; Prompt Injection Egress Shield
+        SandForge Local Engine &bull; Sub-150ms Container Sandbox &bull; Sub-15ms CoW Rollback &bull; Prompt Injection Egress Shield &bull; Honeytoken Tripwires
       </footer>
 
       {activeDiff && (

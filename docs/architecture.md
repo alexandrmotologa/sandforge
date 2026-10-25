@@ -111,3 +111,48 @@ SandForge implements the standard JSON-RPC 2.0 stdio transport defined by the Mo
 - `initialize`: declares tool capabilities to host LLMs.
 - `tools/list`: registers `sandforge_run`, `sandforge_rollback`, `sandforge_diff`, `sandforge_snapshot`, `sandforge_network_alerts`, and `sandforge_status`.
 - `tools/call`: executes sandboxed operations and returns formatted JSON text results.
+
+---
+
+## 6. Test-Driven Verification and Auto-Rollback
+
+SandForge introduces verification-driven tool execution via RunWithVerify:
+1. Checkpoint Creation: A Git index snapshot is captured before any command executes.
+2. Command Execution: The requested mutation command (e.g. build step, dependency install, code refactor) runs.
+3. Automated Test Verification: The specified verification test command runs immediately in the same workspace.
+4. Auto-Rollback Decision:
+   - If tests succeed (exit code 0), the command result is preserved and the mutation diff summary is reported.
+   - If tests fail (exit code != 0), SandForge immediately restores the workspace back to the pre-command checkpoint and returns the test error output to the agent.
+
+---
+
+## 7. Deep Packet Inspection & Honeytoken Vault
+
+To stop prompt injection attacks attempting secret exfiltration:
+1. Deep Packet Inspection (DPI): Every outbound request body and URL query processed by the forward proxy is scanned against regex signatures for known API keys: Anthropic, OpenAI, GitHub personal access tokens, AWS credentials, Slack tokens, Stripe keys, and RSA private keys.
+2. Synthetic Honeytoken Vault: SandForge plants decoy credentials (e.g. sk_live_sandforge_trap_...) into the sandbox process environment. Any outbound request referencing these synthetic tripwires triggers an immediate 403 Forbidden rejection and high-severity security alert.
+
+---
+
+## 8. Destructive Command Interceptor & Policy Engine
+
+SandForge implements a pre-execution deterministic policy engine:
+1. Lexical Tokenization: Command strings are tokenized and parsed into argument lists.
+2. Rule Inspection:
+   - Root Deletion: Blocks 
+m -rf /, 
+mdir /s /q C:\, and system drive wipes.
+   - Force Git Pushing: Blocks git push --force and -f options targeting remote repositories.
+   - Fork Bombs: Blocks shell recursion patterns (:(){ :|:& };: and equivalent PowerShell loops).
+   - System Halt: Blocks shutdown, 
+eboot, and power management commands.
+3. Immediate Interception: Violating commands return exit code 126 before touching the operating system.
+
+---
+
+## 9. Security Incident Report & Audit Exporter
+
+For compliance and post-mortem analysis:
+- Generates structured security audit reports summarizing total commands run, policy blocks, and exfiltration attempts.
+- Supports HTML, Markdown, and JSON export formats via CLI (sandforge export-audit), REST API (/api/audit/report), and the Web Studio interface.
+

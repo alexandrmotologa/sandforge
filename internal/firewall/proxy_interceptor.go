@@ -1,6 +1,7 @@
 package firewall
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -65,7 +66,7 @@ func (p *ProxyInterceptor) EnvVars() []string {
 	if addr == "" {
 		return nil
 	}
-	return []string{
+	envs := []string{
 		"HTTP_PROXY=" + addr,
 		"HTTPS_PROXY=" + addr,
 		"ALL_PROXY=" + addr,
@@ -73,6 +74,13 @@ func (p *ProxyInterceptor) EnvVars() []string {
 		"https_proxy=" + addr,
 		"all_proxy=" + addr,
 	}
+
+	// Also append honeytoken environment variables for decoy tripping
+	if p.controller != nil && p.controller.HoneyVault() != nil {
+		envs = append(envs, p.controller.HoneyVault().EnvStrings()...)
+	}
+
+	return envs
 }
 
 // Close terminates the proxy server.
@@ -167,6 +175,54 @@ func (p *ProxyInterceptor) handleHTTP(w http.ResponseWriter, req *http.Request) 
 	}
 	port, _ := strconv.Atoi(portStr)
 
+	// Read and buffer body for deep packet inspection (up to 64KB)
+	var bodyBytes []byte
+	if req.Body != nil {
+		bodyBytes, _ = io.ReadAll(io.LimitReader(req.Body, 64*1024))
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	}
+
+	scanTarget := req.URL.String() + " " + string(bodyBytes)
+
+	// 1. Check for honeytoken tripwire triggers
+	if p.controller.HoneyVault() != nil {
+		if hit, tokenName, snippet := p.controller.HoneyVault().Check(scanTarget); hit {
+			alert := p.controller.AlertHub().Record(
+				"honeytoken-trap",
+				host,
+				port,
+				"http",
+				"BLOCK",
+				fmt.Sprintf("TRIPWIRE TRIGGERED: decoy %s detected in outbound request", tokenName),
+				snippet,
+				"critical",
+			)
+			w.Header().Set("X-SandForge-Firewall", "BLOCKED")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"error":"honeytoken_tripwire_triggered","reason":%q,"alert_id":%q}`, alert.Reason, alert.ID)))
+			return
+		}
+	}
+
+	// 2. Check for real credential leakage via Deep Packet Inspection (DPI)
+	if hit, credType, snippet := ScanPayload(scanTarget); hit {
+		alert := p.controller.AlertHub().Record(
+			"dpi-leak-guard",
+			host,
+			port,
+			"http",
+			"BLOCK",
+			fmt.Sprintf("CREDENTIAL EXFILTRATION BLOCKED: %s found in payload", credType),
+			snippet,
+			"critical",
+		)
+		w.Header().Set("X-SandForge-Firewall", "BLOCKED")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"error":"credential_leak_blocked","reason":%q,"alert_id":%q}`, alert.Reason, alert.ID)))
+		return
+	}
+
+	// 3. Evaluate destination host and domain allowlist
 	allowed, alert := p.controller.CheckAndRecord("proxy-http", host, port, "http", req.URL.String())
 	if !allowed {
 		w.Header().Set("X-SandForge-Firewall", "BLOCKED")

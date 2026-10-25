@@ -7,14 +7,18 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
+
+	"github.com/alexandrmotologa/sandforge/internal/types"
 )
 
 // Server implements an MCP stdio JSON-RPC 2.0 server.
 type Server struct {
-	handler *ToolHandler
-	reader  io.Reader
-	writer  io.Writer
-	mu      sync.Mutex
+	handler         *ToolHandler
+	reader          io.Reader
+	writer          io.Writer
+	mu              sync.Mutex
+	connectedClient *types.ConnectedClient
 }
 
 // NewServer creates a new MCP server.
@@ -60,6 +64,29 @@ func (s *Server) Serve(ctx context.Context) error {
 func (s *Server) handleRequest(ctx context.Context, req *JSONRPCRequest) {
 	switch req.Method {
 	case "initialize":
+		var initParams struct {
+			ClientInfo struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"clientInfo"`
+		}
+		_ = json.Unmarshal(req.Params, &initParams)
+
+		clientName := initParams.ClientInfo.Name
+		if clientName == "" {
+			clientName = "unknown-agent"
+		}
+
+		s.mu.Lock()
+		s.connectedClient = &types.ConnectedClient{
+			ID:          fmt.Sprintf("client-%d", time.Now().UnixNano()),
+			Name:        clientName,
+			Version:     initParams.ClientInfo.Version,
+			ConnectedAt: time.Now(),
+			LastSeen:    time.Now(),
+		}
+		s.mu.Unlock()
+
 		result := map[string]interface{}{
 			"protocolVersion": "2024-11-05",
 			"capabilities": map[string]interface{}{
@@ -88,6 +115,13 @@ func (s *Server) handleRequest(ctx context.Context, req *JSONRPCRequest) {
 			return
 		}
 
+		s.mu.Lock()
+		if s.connectedClient != nil {
+			s.connectedClient.LastSeen = time.Now()
+			s.connectedClient.CallsCount++
+		}
+		s.mu.Unlock()
+
 		result, err := s.handler.ExecuteTool(ctx, params.Name, params.Arguments)
 		if err != nil {
 			s.sendError(req.ID, -32603, fmt.Sprintf("Internal error: %v", err))
@@ -102,6 +136,13 @@ func (s *Server) handleRequest(ctx context.Context, req *JSONRPCRequest) {
 	default:
 		s.sendError(req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
 	}
+}
+
+// Client returns information about the connected client.
+func (s *Server) Client() *types.ConnectedClient {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.connectedClient
 }
 
 func (s *Server) sendResult(id interface{}, result interface{}) {

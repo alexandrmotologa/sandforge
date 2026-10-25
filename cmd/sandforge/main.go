@@ -12,11 +12,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexandrmotologa/sandforge/internal/audit"
 	"github.com/alexandrmotologa/sandforge/internal/container"
 	"github.com/alexandrmotologa/sandforge/internal/firewall"
 	"github.com/alexandrmotologa/sandforge/internal/mcp"
+	"github.com/alexandrmotologa/sandforge/internal/policy"
 	"github.com/alexandrmotologa/sandforge/internal/server"
 	"github.com/alexandrmotologa/sandforge/internal/snapshot"
+	"github.com/alexandrmotologa/sandforge/internal/types"
 )
 
 const banner = `
@@ -51,6 +54,10 @@ func main() {
 		runSnapshots(args)
 	case "status":
 		runStatus(args)
+	case "init-mcp":
+		runInitMCP(args)
+	case "export-audit":
+		runExportAudit(args)
 	case "help", "--help", "-h":
 		printHelp()
 	default:
@@ -66,12 +73,14 @@ Usage:
   sandforge <command> [flags]
 
 Commands:
-  mcp         Start Model Context Protocol (MCP) stdio server for Claude Code and Cursor
-  serve       Start SandForge HTTP API, WebSocket hub, and React 19 web studio
-  run         Execute a command inside the sandbox with pre-snapshotting and diff tracking
-  rollback    Restore workspace to a designated snapshot ID in under 15ms
-  snapshots   List chronological snapshot timeline
-  status      Display sandbox engine health and egress security policy
+  mcp          Start Model Context Protocol (MCP) stdio server for Claude Code and Cursor
+  serve        Start SandForge HTTP API, WebSocket hub, and React 19 web studio
+  run          Execute a command inside the sandbox with pre-snapshotting and diff tracking
+  rollback     Restore workspace to a designated snapshot ID in under 15ms
+  snapshots    List chronological snapshot timeline
+  status       Display sandbox engine health and egress security policy
+  init-mcp     Configure SandForge automatically for Claude Code, Cursor, or Windsurf
+  export-audit Export security incident audit report to HTML, Markdown, or JSON
 
 Flags:
   --workspace Path to workspace directory (default: current working directory)
@@ -101,7 +110,8 @@ func initServices(workspace string, imageName string) (*container.Executor, *fir
 
 	processRt := container.NewProcessRuntime(absWorkspace)
 	pool := container.NewPool(dockerRt, processRt, 2)
-	executor := container.NewExecutor(pool, gc)
+	policyEngine := policy.NewEngine()
+	executor := container.NewExecutor(pool, gc, policyEngine)
 
 	hub := firewall.NewAlertHub(1000)
 	fw := firewall.NewController(hub)
@@ -209,19 +219,33 @@ func runServe(args []string) {
 }
 
 func runExec(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: sandforge run \"<command>\" [--workspace .]")
-		os.Exit(1)
-	}
-
-	cmdStr := args[0]
 	workspace := "."
-	for i, arg := range args {
+	verifyCmd := ""
+	var positional []string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		if arg == "--workspace" && i+1 < len(args) {
 			workspace = args[i+1]
+			i++
+		} else if strings.HasPrefix(arg, "--workspace=") {
+			workspace = strings.TrimPrefix(arg, "--workspace=")
+		} else if arg == "--verify" && i+1 < len(args) {
+			verifyCmd = args[i+1]
+			i++
+		} else if strings.HasPrefix(arg, "--verify=") {
+			verifyCmd = strings.TrimPrefix(arg, "--verify=")
+		} else if !strings.HasPrefix(arg, "-") {
+			positional = append(positional, arg)
 		}
 	}
 
+	if len(positional) == 0 {
+		fmt.Println("Usage: sandforge run \"<command>\" [--verify \"<test_cmd>\"] [--workspace .]")
+		os.Exit(1)
+	}
+
+	cmdStr := positional[0]
 	executor, _, proxy, err := initServices(workspace, "alpine:latest")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Initialization failed: %v\n", err)
@@ -240,17 +264,28 @@ func runExec(args []string) {
 	}
 
 	absWorkspace, _ := filepath.Abs(workspace)
-	res, err := executor.Run(context.Background(), cmdStr, container.ExecOptions{
+	opts := container.ExecOptions{
 		Timeout:    60 * time.Second,
 		WorkingDir: absWorkspace,
 		Env:        env,
-	})
+	}
+
+	var res *types.ExecutionResult
+	if verifyCmd != "" {
+		res, err = executor.RunWithVerify(context.Background(), cmdStr, verifyCmd, opts)
+	} else {
+		res, err = executor.Run(context.Background(), cmdStr, opts)
+	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Execution failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("[Snapshot: %s] [Duration: %dms] [ExitCode: %d]\n", res.SnapshotID, res.DurationMs, res.ExitCode)
+	if res.AutoRolledBack {
+		fmt.Println("[SECURITY/TEST GUARD]: Verification failed. Workspace automatically rolled back to clean state!")
+	}
 	if res.Stdout != "" {
 		fmt.Print(res.Stdout)
 	}
@@ -357,5 +392,82 @@ func runStatus(args []string) {
 	fmt.Printf("  Total Snapshots:   %d\n", len(snapshots))
 	fmt.Printf("  Network Alerts:    %d total (%d blocked exfiltrations)\n", totalAlerts, blocked)
 	fmt.Printf("  Allowed Domains:   %d domains configured\n", len(fw.AllowedDomains()))
+	fmt.Printf("  Honeytokens:       %d active decoy tripwires\n", fw.HoneyVault().Count())
 }
 
+func runInitMCP(args []string) {
+	fs := flag.NewFlagSet("init-mcp", flag.ExitOnError)
+	client := fs.String("client", "claude", "Target AI client: claude, cursor, or windsurf")
+	workspace := fs.String("workspace", ".", "Target workspace directory path")
+	binary := fs.String("bin", "", "Path to sandforge binary (default: sandforge in PATH)")
+	_ = fs.Parse(args)
+
+	cfgPath, err := mcp.InstallConfig(*client, *workspace, *binary)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to configure MCP client: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Successfully configured SandForge MCP server for '%s'!\n", *client)
+	fmt.Printf("Config file: %s\n", cfgPath)
+	fmt.Println("You can now launch your agent to execute commands safely inside SandForge.")
+}
+
+func runExportAudit(args []string) {
+	fs := flag.NewFlagSet("export-audit", flag.ExitOnError)
+	workspace := fs.String("workspace", ".", "Target workspace directory path")
+	format := fs.String("format", "md", "Output format: md, html, or json")
+	output := fs.String("output", "", "Optional destination file path")
+	_ = fs.Parse(args)
+
+	executor, fw, _, err := initServices(*workspace, "alpine:latest")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Initialization failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		_ = executor.Pool().Close()
+	}()
+
+	ctx := context.Background()
+	snapshots, _ := executor.Snapshotter().List(ctx)
+	alerts := fw.AlertHub().List(200)
+
+	status := types.SandboxStatus{
+		State:            "ready",
+		Mode:             executor.Pool().ActiveRuntime(ctx).Mode(),
+		WorkspacePath:    *workspace,
+		TotalSnapshots:   len(snapshots),
+		TotalAlerts:      len(alerts),
+		BlockedAttempts:  0,
+		Firewall:         fw.Config(),
+		Policy:           executor.Policy().Config(),
+	}
+
+	for _, a := range alerts {
+		if a.Action == "BLOCK" {
+			status.BlockedAttempts++
+		}
+	}
+
+	var content string
+	switch strings.ToLower(*format) {
+	case "html":
+		content = audit.GenerateHTMLReport(status, alerts, snapshots)
+	case "json":
+		bytes, _ := audit.GenerateJSONReport(status, alerts, snapshots)
+		content = string(bytes)
+	default:
+		content = audit.GenerateMarkdownReport(status, alerts, snapshots)
+	}
+
+	if *output != "" {
+		if err := os.WriteFile(*output, []byte(content), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Writing output failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Audit report exported successfully to: %s\n", *output)
+	} else {
+		fmt.Println(content)
+	}
+}

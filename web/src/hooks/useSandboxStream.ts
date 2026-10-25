@@ -1,19 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { SandboxStatus, Snapshot, NetworkAlert, ExecutionResult, SnapshotDiff, FirewallConfig } from '../types';
+import type { SandboxStatus, Snapshot, NetworkAlert, ExecutionResult, SnapshotDiff, FirewallConfig, PolicyConfig } from '../types';
 
 export function useSandboxStream() {
   const [status, setStatus] = useState<SandboxStatus | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [alerts, setAlerts] = useState<NetworkAlert[]>([]);
   const [firewall, setFirewall] = useState<FirewallConfig | null>(null);
+  const [policy, setPolicy] = useState<PolicyConfig | null>(null);
   const [executions, setExecutions] = useState<ExecutionResult[]>([]);
   const [connected, setConnected] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   const wsRef = useRef<WebSocket | null>(null);
 
   const getApiUrl = (path: string) => {
-    // If running under Vite dev server (port 5173), proxy or point to :8920
     const isDev = window.location.port === '5173';
     const baseUrl = isDev ? 'http://localhost:8920' : '';
     return `${baseUrl}${path}`;
@@ -30,21 +29,21 @@ export function useSandboxStream() {
 
   const fetchInitialData = useCallback(async () => {
     try {
-      const [statusRes, snapRes, alertsRes, rulesRes] = await Promise.all([
+      const [statusRes, snapRes, alertsRes, rulesRes, policyRes] = await Promise.all([
         fetch(getApiUrl('/api/status')).then(r => r.ok ? r.json() : null),
         fetch(getApiUrl('/api/snapshots')).then(r => r.ok ? r.json() : []),
         fetch(getApiUrl('/api/firewall/alerts?limit=100')).then(r => r.ok ? r.json() : []),
         fetch(getApiUrl('/api/firewall/rules')).then(r => r.ok ? r.json() : null),
+        fetch(getApiUrl('/api/policy')).then(r => r.ok ? r.json() : null),
       ]);
 
       if (statusRes) setStatus(statusRes);
       if (snapRes) setSnapshots(snapRes);
       if (alertsRes) setAlerts(alertsRes);
       if (rulesRes) setFirewall(rulesRes);
+      if (policyRes) setPolicy(policyRes);
     } catch (e) {
       console.warn('Failed to fetch initial status, server may be starting...', e);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -133,6 +132,34 @@ export function useSandboxStream() {
     return result;
   };
 
+  const runWithVerify = async (command: string, verifyCommand: string): Promise<ExecutionResult> => {
+    const res = await fetch(getApiUrl('/api/exec/verify'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, verify_command: verifyCommand }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(err);
+    }
+    const result: ExecutionResult = await res.json();
+    setExecutions(prev => [result, ...prev]);
+    await fetchInitialData();
+    return result;
+  };
+
+  const updatePolicy = async (newPolicy: PolicyConfig) => {
+    const res = await fetch(getApiUrl('/api/policy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newPolicy),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setPolicy(updated);
+    }
+  };
+
   const fetchDiff = async (fromId: string, toId: string = 'working'): Promise<SnapshotDiff> => {
     const res = await fetch(getApiUrl(`/api/snapshots/diff?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`));
     if (!res.ok) {
@@ -166,19 +193,26 @@ export function useSandboxStream() {
     }
   };
 
+  const downloadAuditReport = (format: string = 'html') => {
+    window.open(getApiUrl(`/api/audit/report?format=${format}`), '_blank');
+  };
+
   return {
     status,
     snapshots,
     alerts,
     firewall,
+    policy,
     executions,
     connected,
-    loading,
     rollback,
     runCommand,
+    runWithVerify,
+    updatePolicy,
     fetchDiff,
     addDomain,
     removeDomain,
+    downloadAuditReport,
     refresh: fetchInitialData,
   };
 }

@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/alexandrmotologa/sandforge/internal/container"
 	"github.com/alexandrmotologa/sandforge/internal/firewall"
+	"github.com/alexandrmotologa/sandforge/internal/policy"
 	"github.com/alexandrmotologa/sandforge/internal/snapshot"
 	"github.com/alexandrmotologa/sandforge/internal/types"
 )
@@ -27,7 +29,7 @@ func setupTestServer(t *testing.T) (*Server, string, func()) {
 
 	processRt := container.NewProcessRuntime(tempDir)
 	pool := container.NewPool(nil, processRt, 2)
-	executor := container.NewExecutor(pool, gc)
+	executor := container.NewExecutor(pool, gc, policy.NewEngine())
 
 	hub := firewall.NewAlertHub(100)
 	fw := firewall.NewController(hub)
@@ -99,6 +101,54 @@ func TestServerExecAndRollback(t *testing.T) {
 
 	if rbW.Code != http.StatusOK {
 		t.Fatalf("expected rollback status 200, got: %d (%s)", rbW.Code, rbW.Body.String())
+	}
+}
+
+func TestServerExecVerify(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	verifyBody := []byte(`{"command":"echo passing > verify_out.txt","verify_command":"cmd /C exit 0"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/exec/verify", bytes.NewReader(verifyBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected verify status 200, got: %d (%s)", w.Code, w.Body.String())
+	}
+
+	var execRes types.ExecutionResult
+	if err := json.NewDecoder(w.Body).Decode(&execRes); err != nil {
+		t.Fatalf("failed to decode result: %v", err)
+	}
+	if !execRes.Verified || !execRes.VerifyPassed {
+		t.Fatalf("expected verification to pass")
+	}
+}
+
+func TestServerPolicyAndAuditEndpoints(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// 1. Policy GET
+	req := httptest.NewRequest(http.MethodGet, "/api/policy", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected policy status 200, got: %d", w.Code)
+	}
+
+	// 2. Audit Report HTML
+	auditReq := httptest.NewRequest(http.MethodGet, "/api/audit/report?format=html", nil)
+	auditW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(auditW, auditReq)
+	if auditW.Code != http.StatusOK {
+		t.Fatalf("expected audit status 200, got: %d", auditW.Code)
+	}
+	if !strings.Contains(auditW.Body.String(), "<!DOCTYPE html>") {
+		t.Fatalf("expected HTML in audit response")
 	}
 }
 

